@@ -20,6 +20,8 @@ nodes:
       taints:
       - key: "node.vanstee.github.io/daemonset-not-ready"
         effect: "NoSchedule"
+      kubeletExtraArgs:
+        node-labels: "node.kubernetes.io/ready=false"
 EOF
 
 docker build -t node-taint-manager .
@@ -83,11 +85,11 @@ spec:
 EOF
 
 timeout 30s bash <<EOF
-while ! kubectl get node kind-worker -o json | jq -e '.spec.taints == null'; do
+while ! kubectl get node kind-worker -o json | jq -e '.spec.taints == null and .metadata.labels["node.kubernetes.io/ready"] == "true"'; do
 	sleep 1
 done
 
 echo "!!!"
-echo "!!! SUCCESS: taint was removed for ready daemonset pod"
+echo "!!! SUCCESS: taint was removed for ready daemonset pod and label was added"
 echo "!!!"
 EOF

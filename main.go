@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -35,7 +36,9 @@ const (
 
 	TaintNodeDaemonSetNotReady = "node.vanstee.github.io/daemonset-not-ready"
 
-	JSONPatchOperationOpRemove = "remove"
+	JSONPatchOperationOpRemove  = "remove"
+	JSONPatchOperationOpAdd     = "add"
+	JSONPatchOperationOpReplace = "replace"
 )
 
 var (
@@ -56,13 +59,53 @@ var (
 )
 
 type JSONPatchOperation struct {
-	Op   string `json:"op"`
-	Path string `json:"path"`
+	Op    string      `json:"op"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+type LabelConfig struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func parseCustomLabels() []LabelConfig {
+	var labels []LabelConfig
+
+	// Parse labels from CUSTOM_LABELS environment variable
+	// Format: key1=value1,key2=value2,key3=value3
+	if customLabelsStr := os.Getenv("CUSTOM_LABELS"); customLabelsStr != "" {
+		for _, pair := range strings.Split(customLabelsStr, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) != 2 {
+				log.Printf("warning: invalid label format in CUSTOM_LABELS: %s (expected key=value)", pair)
+				continue
+			}
+
+			labels = append(labels, LabelConfig{
+				Key:   strings.TrimSpace(parts[0]),
+				Value: strings.TrimSpace(parts[1]),
+			})
+		}
+	}
+
+	return labels
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+
+	// Parse custom labels configuration
+	customLabels := parseCustomLabels()
+	if len(customLabels) > 0 {
+		log.Printf("configured custom labels: %+v", customLabels)
+	}
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -222,6 +265,27 @@ func main() {
 					},
 				}
 
+				// Add custom labels if configured
+				if len(customLabels) > 0 {
+					// Initialize labels map if it doesn't exist
+					if node.ObjectMeta.Labels == nil {
+						patch = append(patch, JSONPatchOperation{
+							Op:    JSONPatchOperationOpAdd,
+							Path:  "/metadata/labels",
+							Value: map[string]string{},
+						})
+					}
+
+					// Add each custom label
+					for _, label := range customLabels {
+						patch = append(patch, JSONPatchOperation{
+							Op:    JSONPatchOperationOpAdd,
+							Path:  fmt.Sprintf("/metadata/labels/%s", strings.ReplaceAll(label.Key, "/", "~1")),
+							Value: label.Value,
+						})
+					}
+				}
+
 				bytes, err := json.Marshal(patch)
 				if err != nil {
 					continue
@@ -238,7 +302,12 @@ func main() {
 				if err != nil {
 					continue
 				}
-				log.Printf("untainted node %s", node.ObjectMeta.Name)
+
+				if len(customLabels) > 0 {
+					log.Printf("untainted node %s and added labels: %+v", node.ObjectMeta.Name, customLabels)
+				} else {
+					log.Printf("untainted node %s", node.ObjectMeta.Name)
+				}
 
 				timeToStartup.WithLabelValues().Observe(nodeTimeToReady)
 				nodesUntainted.Inc()

@@ -8,7 +8,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: node-taint-manager
-
   name: node-taint-manager
 spec:
   replicas: 1
@@ -21,12 +20,16 @@ spec:
         app: node-taint-manager
     spec:
       containers:
-      - name: node-taint-manager
-        image: node-taint-manager:latest
-        imagePullPolicy: Never
+        - name: node-taint-manager
+          image: node-taint-manager:latest
+          imagePullPolicy: Never
+          # Comment out and modify the following to add custom labels when taints are removed
+          env:
+            - name: CUSTOM_LABELS
+              value: "node.kubernetes.io/ready=true"
       serviceAccount: node-taint-manager
       tolerations:
-      - operator: "Exists"
+        - operator: "Exists"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -39,21 +42,22 @@ kind: ClusterRole
 metadata:
   name: node-taint-manager
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - "pods"
-  verbs:
-  - "list"
-  - "watch"
-- apiGroups:
-  - ""
-  resources:
-  - "nodes"
-  verbs:
-  - "list"
-  - "patch"
-  - "watch"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+    verbs:
+      - "list"
+      - "watch"
+  - apiGroups:
+      - ""
+    resources:
+      - "nodes"
+    verbs:
+      - "list"
+      - "patch"
+      - "watch"
+      - "update"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -64,6 +68,6 @@ roleRef:
   name: node-taint-manager
   apiGroup: rbac.authorization.k8s.io
 subjects:
-- kind: ServiceAccount
-  name: node-taint-manager
-  namespace: node-taint-manager
+  - kind: ServiceAccount
+    name: node-taint-manager
+    namespace: node-taint-manager

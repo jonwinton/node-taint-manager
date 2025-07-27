@@ -25,6 +25,23 @@ kubectl apply -f manifest.yml
 kubectl -n node-taint-manager rollout status deployment node-taint-manager
 ```
 
+### Optional: Configure custom labels
+
+You can configure the node-taint-manager to add custom labels to nodes when their taints are removed. This is useful for marking nodes as ready or adding operational labels.
+
+#### Using environment variables in the deployment:
+
+```yaml
+env:
+- name: CUSTOM_LABELS
+  value: "node.kubernetes.io/ready=true,environment=production"
+```
+
+#### Label format:
+- Use `key=value` format for each label
+- Multiple labels can be separated by commas
+- Labels with forward slashes (like `node.kubernetes.io/ready`) are supported
+
 2. Configure taints to opt in nodes.
 
 ```
